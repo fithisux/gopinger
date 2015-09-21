@@ -4,12 +4,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
-	"sync"
 	"github.com/fithisux/gopinger/pinglogic"
+	"net"
+	"os"
 )
-
-var wg sync.WaitGroup
 
 func main() {
 	fmt.Println("Hello World!")
@@ -19,12 +17,21 @@ func main() {
 		fmt.Println("src must not be empty")
 		os.Exit(1)
 	}
-	listentome(*strSourceAddr)	
+
+	ServerAddr, err := net.ResolveUDPAddr("udp", *strSourceAddr)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+
+	listentome(ServerAddr)
 }
 
+func listentome(ServerAddr *net.UDPAddr) {
+	result_chan := make(chan *pinglogic.PingMessage)
+	go pinglogic.Passive(ServerAddr, result_chan)
 
-func listentome(strSourceAddr string){
-	wg.Add(1)
-	go pinglogic.Passive(strSourceAddr)
-	wg.Wait()
+	for x := range result_chan {
+		fmt.Println("received " + x.Msg + " from " + x.Backcall)
+	}
 }
