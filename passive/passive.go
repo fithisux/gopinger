@@ -28,10 +28,11 @@ func main() {
 }
 
 func listentome(ServerAddr *net.UDPAddr) {
-	result_chan := make(chan *pinglogic.PingMessage)
-	go pinglogic.Passive(ServerAddr, result_chan)
+	pinglogic.Messagechannel = new(pinglogic.PingMessageChannel)
+	pinglogic.Messagechannel.Mychannel = make(chan *pinglogic.PingMessage)
+	go pinglogic.Passive(ServerAddr)
 
-	for x := range result_chan {
+	for x := range pinglogic.Messagechannel.Mychannel {
 		fmt.Println("received " + x.Msg + " from " + x.Backcall)
 	}
 }

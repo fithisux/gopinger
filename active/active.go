@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"sync"
 )
 
 func main() {
@@ -28,7 +29,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	attempts := &pinglogic.TimedAttempts{time.Duration(*timeout), *retries}
+	attempts := &pinglogic.TimedAttempts{time.Duration(*timeout) *time.Millisecond, *retries}
 
 	if (strDestinationAddr == nil) || (*strDestinationAddr == "") {
 		fmt.Println("dst must not be empty")
@@ -55,8 +56,16 @@ func main() {
 	if err != nil {
 		fmt.Println("Error for sourceAddr: ", err)
 	}
+	
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() { defer wg.Done(); pinglogic.Passive(sourceAddr) }()
 
 	elapsed, err := pinglogic.Active(attempts, sourceAddr, targets)
+	
+	pinglogic.StopPassive()
+	wg.Wait()
 
 	if err != nil {
 		fmt.Println("After " + elapsed.String() + " we have error : " + err.Error())
