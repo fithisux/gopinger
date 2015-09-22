@@ -3,7 +3,6 @@ package pinglogic
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -14,12 +13,6 @@ import (
 type TimedAttempts struct {
 	Timeout time.Duration
 	Retries int
-}
-
-type ErrorMesg struct {
-	status  bool
-	msg     string
-	writing bool
 }
 
 type PingMessage struct {
@@ -103,26 +96,13 @@ func Passive(ServerAddr *net.UDPAddr) {
 	}
 }
 
-func Active(attempts *TimedAttempts, inAddr *net.UDPAddr, targets []*net.UDPAddr) (time.Duration, error) {
-	mesg_channel := make(chan *ErrorMesg)
+func Active(attempts *TimedAttempts, inAddr *net.UDPAddr, targets []*net.UDPAddr) (time.Duration, bool) {
+	mesg_channel := make(chan bool)
 	startTime := time.Now()
 	go writeToDestinations(attempts, mesg_channel, inAddr, targets)
-	mesg := <-mesg_channel
-	strerr := ""
-	if !mesg.status {
-		strerr = "we failed because " + mesg.msg
-	} else {
-		if mesg.msg != "OK" {
-			strerr = "we failed on writer because " + mesg.msg
-		}
-	}
+	ok := <-mesg_channel	
 	close(mesg_channel)
-	elapsed := time.Since(startTime)
-	if strerr == "" {
-		return elapsed, nil
-	} else {
-		return elapsed, errors.New(strerr)
-	}
+	return time.Since(startTime),ok	
 }
 
 func writeToDestination(data []byte, dstAddr *net.UDPAddr) {
@@ -138,7 +118,7 @@ func writeToDestination(data []byte, dstAddr *net.UDPAddr) {
 	}
 }
 
-func writeToDestinations(attempts *TimedAttempts, mesg_channel chan *ErrorMesg, inAddr *net.UDPAddr, targets []*net.UDPAddr) {	
+func writeToDestinations(attempts *TimedAttempts, mesg_channel chan bool, inAddr *net.UDPAddr, targets []*net.UDPAddr) {	
 	fmt.Println("Write to destinations")
 	Messagechannel = new(PingMessageChannel)
 	Messagechannel.Mychannel = make(chan *PingMessage)
@@ -159,7 +139,7 @@ func writeToDestinations(attempts *TimedAttempts, mesg_channel chan *ErrorMesg, 
 				if b.Msg == "PONG" {
 					delete(mymap, b.Backcall)
 					if len(mymap) == 0 {
-						mesg_channel <- &ErrorMesg{true, "OK", true}
+						mesg_channel <- true
 						goto Cleanmeup
 					}
 				}
@@ -168,15 +148,14 @@ func writeToDestinations(attempts *TimedAttempts, mesg_channel chan *ErrorMesg, 
 			{
 				fmt.Println(counter)
 				if counter == 0 {
-					mesg_channel <- &ErrorMesg{true, "TIMEOUT", true}
+					mesg_channel <- false
 					goto Cleanmeup
 				}
 
 				pingMsg := &PingMessage{"PING", inAddr.String()}
 				xxx, err := json.Marshal(pingMsg)
 				if err != nil {
-					mesg_channel <- &ErrorMesg{false, err.Error(), true}
-					goto Cleanmeup
+					panic(err.Error())
 				}
 				for _, value := range mymap {
 					go writeToDestination(xxx, value)

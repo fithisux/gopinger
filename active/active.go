@@ -62,14 +62,15 @@ func main() {
 	wg.Add(1)
 	go func() { defer wg.Done(); pinglogic.Passive(sourceAddr) }()
 
-	elapsed, err := pinglogic.Active(attempts, sourceAddr, targets)
+	elapsed, ok := pinglogic.Active(attempts, sourceAddr, targets)
 	
 	pinglogic.StopPassive()
 	wg.Wait()
 
-	if err != nil {
-		fmt.Println("After " + elapsed.String() + " we have error : " + err.Error())
+	fmt.Println("After " + elapsed.String())
+	if !ok {
+		fmt.Println("PING TIMEOUT")
 	} else {
-		fmt.Println("After " + elapsed.String() + " pinged normally")
+		fmt.Println("PING OK")
 	}
 }
