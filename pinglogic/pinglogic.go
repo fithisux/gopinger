@@ -138,6 +138,7 @@ func writeToDestinations(attempts *TimedAttempts, mesg_channel chan bool, inAddr
 	counter := attempts.Retries
 	ticker := time.NewTicker(attempts.Timeout)
 	fmt.Println("OK1")
+	initiallength := len(mymap)
 	for {
 		select {
 		case b := <-cc:
@@ -152,9 +153,9 @@ func writeToDestinations(attempts *TimedAttempts, mesg_channel chan bool, inAddr
 			}
 		case <-ticker.C:
 			{
-				fmt.Println(counter)
+				fmt.Println(counter)				
 				if counter == 0 {
-					mesg_channel <- false
+					mesg_channel <- (initiallength > len(mymap))
 					goto Cleanmeup
 				}
 
