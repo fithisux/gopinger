@@ -101,6 +101,12 @@ func Active(attempts *TimedAttempts, inAddr *net.UDPAddr, targets []*net.UDPAddr
 	startTime := time.Now()
 	go writeToDestinations(attempts, mesg_channel, inAddr, targets)
 	ok := <-mesg_channel	
+	
+	if ok {
+		fmt.Println("received as status ok")
+		} else {
+			fmt.Println("received as status not ok")
+		}
 	close(mesg_channel)
 	return time.Since(startTime),ok	
 }
@@ -160,14 +166,16 @@ func writeToDestinations(attempts *TimedAttempts, mesg_channel chan bool, inAddr
 				for _, value := range mymap {
 					go writeToDestination(xxx, value)
 				}
-				fmt.Println("writing ping")
+				fmt.Println("writing ping from "+inAddr.String())
 				counter--
-				ticker = time.NewTicker(attempts.Timeout * time.Millisecond)
+				ticker = time.NewTicker(attempts.Timeout)
 			}
 		}
 	}
+
 Cleanmeup:
-	mu.Lock()
+	fmt.Println("Cleanmeup")
+	mu.Lock()	
 	close(Messagechannel.Mychannel)
 	Messagechannel=nil
 	mu.Unlock()
