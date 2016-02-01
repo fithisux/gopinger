@@ -4,12 +4,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/fithisux/gopinger/pinglogic"
 	"net"
 	"os"
 	"strings"
-	"time"
 	"sync"
+	"time"
+
+	"github.com/fithisux/gopinger/pinglogic"
 )
 
 func main() {
@@ -29,7 +30,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	attempts := &pinglogic.TimedAttempts{time.Duration(*timeout) *time.Millisecond, *retries}
+	attempts := &pinglogic.TimedAttempts{time.Duration(*timeout) * time.Millisecond, *retries}
 
 	if (strDestinationAddr == nil) || (*strDestinationAddr == "") {
 		fmt.Println("dst must not be empty")
@@ -52,25 +53,21 @@ func main() {
 		}
 	}
 
-	sourceAddr, err := net.ResolveUDPAddr("udp", *strSourceAddr)
+	sourceaddress, err := net.ResolveUDPAddr("udp", *strSourceAddr)
 	if err != nil {
 		fmt.Println("Error for sourceAddr: ", err)
 	}
-	
+
 	var wg sync.WaitGroup
 
 	wg.Add(1)
-	go func() { defer wg.Done(); pinglogic.Passive(sourceAddr) }()
+	go func() { defer wg.Done(); pinglogic.Passive(sourceaddress) }()
 
-	elapsed, ok := pinglogic.Active(attempts, sourceAddr, targets)
-	
+	elapsed, _ := pinglogic.Active(attempts, sourceaddress, targets)
+
 	pinglogic.StopPassive()
 	wg.Wait()
 
 	fmt.Println("After " + elapsed.String())
-	if !ok {
-		fmt.Println("PING TIMEOUT")
-	} else {
-		fmt.Println("PING OK")
-	}
+
 }

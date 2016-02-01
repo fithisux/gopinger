@@ -4,9 +4,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/fithisux/gopinger/pinglogic"
 	"net"
 	"os"
+
+	"github.com/fithisux/gopinger/pinglogic"
 )
 
 func main() {
@@ -29,10 +30,10 @@ func main() {
 
 func listentome(ServerAddr *net.UDPAddr) {
 	pinglogic.Messagechannel = new(pinglogic.PingMessageChannel)
-	pinglogic.Messagechannel.Mychannel = make(chan *pinglogic.PingMessage)
+	pinglogic.Messagechannel.Pingmessagechannel = make(chan *pinglogic.PingMessage)
 	go pinglogic.Passive(ServerAddr)
 
-	for x := range pinglogic.Messagechannel.Mychannel {
+	for x := range pinglogic.Messagechannel.Pingmessagechannel {
 		fmt.Println("received " + x.Msg + " from " + x.Backcall)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -21,14 +22,19 @@ type PingMessage struct {
 }
 
 type PingMessageChannel struct {
-	Mychannel chan *PingMessage
+	Pingmessagechannel chan *PingMessage
 }
 
-var mu sync.Mutex
-var running bool = true
-var Messagechannel *PingMessageChannel=nil
+type Multipingresponse struct {
+	Targets map[string]*net.UDPAddr
+	Answers map[string]int
+}
 
-func Passive(ServerAddr *net.UDPAddr) {	
+var mutex sync.Mutex
+var running bool = true
+var Messagechannel *PingMessageChannel = nil
+
+func Passive(ServerAddr *net.UDPAddr) {
 
 	ServerConn, err := net.ListenUDP("udp", ServerAddr)
 	if err != nil {
@@ -37,40 +43,40 @@ func Passive(ServerAddr *net.UDPAddr) {
 	}
 	defer ServerConn.Close()
 	buf := make([]byte, 1024)
-	
+
 	for {
 		goon := true
-		mu.Lock()
+		mutex.Lock()
 		goon = running
-		mu.Unlock()
+		mutex.Unlock()
 		if !goon {
 			break
-		}		
+		}
 		err = ServerConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		if err != nil {
 			panic(err)
 		}
-		n, addr, err := ServerConn.ReadFromUDP(buf)
+		numbytes, addr, err := ServerConn.ReadFromUDP(buf)
 		if err != nil {
 			//fmt.Println(err.Error())
 			continue
 		}
 
-		message := string(buf[0:n])
+		message := string(buf[0:numbytes])
 		fmt.Println("Message ", message, " from ", addr)
 
-		pk1 := new(PingMessage)
-		err = json.Unmarshal(buf[0:n], pk1)
+		pingmessage := new(PingMessage)
+		err = json.Unmarshal([]byte(message), pingmessage)
 		if err != nil {
 			fmt.Println("STRAY " + message)
 			continue
 		}
-		if pk1.Msg == "PING" {
+		if pingmessage.Msg == "PING" {
 			fmt.Println("read some ping")
 			pk2 := &PingMessage{"PONG", ServerAddr.String()}
 			xxx, err := json.Marshal(pk2)
 			if err == nil {
-				dstaddr, err := net.ResolveUDPAddr("udp", pk1.Backcall)
+				dstaddr, err := net.ResolveUDPAddr("udp", pingmessage.Backcall)
 				if err == nil {
 					_, err = ServerConn.WriteTo(xxx, dstaddr)
 					if err != nil {
@@ -82,13 +88,13 @@ func Passive(ServerAddr *net.UDPAddr) {
 			} else {
 				panic(err.Error())
 			}
-		} else if pk1.Msg == "PONG" {
+		} else if pingmessage.Msg == "PONG" {
 			var temp *PingMessageChannel
-			mu.Lock()
+			mutex.Lock()
 			temp = Messagechannel
-			mu.Unlock()			
+			mutex.Unlock()
 			if temp != nil {
-				temp.Mychannel <- pk1				
+				temp.Pingmessagechannel <- pingmessage
 			}
 		} else {
 			fmt.Println("STRAY " + message)
@@ -96,23 +102,18 @@ func Passive(ServerAddr *net.UDPAddr) {
 	}
 }
 
-func Active(attempts *TimedAttempts, inAddr *net.UDPAddr, targets []*net.UDPAddr) (time.Duration, bool) {
-	mesg_channel := make(chan bool)
+func Active(timedattempts *TimedAttempts, sourceaddress *net.UDPAddr, targets []*net.UDPAddr) (time.Duration, *Multipingresponse) {
+	statuschannel := make(chan *Multipingresponse)
 	startTime := time.Now()
-	go writeToDestinations(attempts, mesg_channel, inAddr, targets)
-	ok := <-mesg_channel	
-	
-	if ok {
-		fmt.Println("received as status ok")
-		} else {
-			fmt.Println("received as status not ok")
-		}
-	close(mesg_channel)
-	return time.Since(startTime),ok	
+	go writeToDestinations(timedattempts, statuschannel, sourceaddress, targets)
+	ok := <-statuschannel
+	fmt.Println("received " + strconv.Itoa(len(ok.Answers)) + " answers")
+	close(statuschannel)
+	return time.Since(startTime), ok
 }
 
-func writeToDestination(data []byte, dstAddr *net.UDPAddr) {
-	Conn, err := net.DialUDP("udp", nil, dstAddr)
+func writeToDestination(data []byte, destinationaddress *net.UDPAddr) {
+	Conn, err := net.DialUDP("udp", nil, destinationaddress)
 	if err != nil {
 		fmt.Println(err.Error())
 		return
@@ -124,67 +125,67 @@ func writeToDestination(data []byte, dstAddr *net.UDPAddr) {
 	}
 }
 
-func writeToDestinations(attempts *TimedAttempts, mesg_channel chan bool, inAddr *net.UDPAddr, targets []*net.UDPAddr) {	
+func writeToDestinations(timedattempts *TimedAttempts, statuschannel chan *Multipingresponse, sourceaddress *net.UDPAddr, targets []*net.UDPAddr) {
 	fmt.Println("Write to destinations")
 	Messagechannel = new(PingMessageChannel)
-	Messagechannel.Mychannel = make(chan *PingMessage)
-	
-	cc := Messagechannel.Mychannel
-	mymap := make(map[string]*net.UDPAddr)
+	Messagechannel.Pingmessagechannel = make(chan *PingMessage)
+	responses := new(Multipingresponse)
+
+	responses.Targets = make(map[string]*net.UDPAddr)
 	for _, x := range targets {
-		mymap[x.String()] = x
+		responses.Targets[x.String()] = x
 	}
 
-	counter := attempts.Retries
-	ticker := time.NewTicker(attempts.Timeout)
+	retries := 1
+	ticker := time.NewTicker(timedattempts.Timeout)
 	fmt.Println("OK1")
-	initiallength := len(mymap)
 	for {
 		select {
-		case b := <-cc:
+		case b := <-Messagechannel.Pingmessagechannel:
 			{
 				if b.Msg == "PONG" {
-					delete(mymap, b.Backcall)
-					if len(mymap) == 0 {
-						mesg_channel <- true
+					delete(responses.Targets, b.Backcall)
+					responses.Answers[b.Backcall] = retries
+					if len(responses.Targets) == 0 {
+						statuschannel <- responses
 						goto Cleanmeup
 					}
 				}
 			}
 		case <-ticker.C:
 			{
-				fmt.Println(counter)				
-				if counter == 0 {
-					mesg_channel <- (initiallength > len(mymap))
+				fmt.Println(retries)
+				if retries == timedattempts.Retries {
+					statuschannel <- responses
 					goto Cleanmeup
 				}
 
-				pingMsg := &PingMessage{"PING", inAddr.String()}
-				xxx, err := json.Marshal(pingMsg)
+				pingmessage := &PingMessage{"PING", sourceaddress.String()}
+				byterepresentation, err := json.Marshal(pingmessage)
 				if err != nil {
 					panic(err.Error())
 				}
-				for _, value := range mymap {
-					go writeToDestination(xxx, value)
+				for _, destinationaddress := range responses.Targets {
+					go writeToDestination(byterepresentation, destinationaddress)
 				}
-				fmt.Println("writing ping from "+inAddr.String())
-				counter--
-				ticker = time.NewTicker(attempts.Timeout)
+				fmt.Println("writing ping from " + sourceaddress.String())
+				retries++
+				ticker = time.NewTicker(timedattempts.Timeout)
 			}
 		}
 	}
 
 Cleanmeup:
 	fmt.Println("Cleanmeup")
-	mu.Lock()	
-	close(Messagechannel.Mychannel)
-	Messagechannel=nil
-	mu.Unlock()
+	mutex.Lock()
+	close(Messagechannel.Pingmessagechannel)
+	Messagechannel = nil
+	mutex.Unlock()
 	return
 }
 
-func StopPassive(){
-	mu.Lock()
+func StopPassive() {
+	mutex.Lock()
 	running = false
-	mu.Unlock()
+	mutex.Unlock()
 }
