@@ -12,8 +12,8 @@ import (
 )
 
 type TimedAttempts struct {
-	Timeout time.Duration
-	Retries int
+	Timeout time.Duration `json:"timeout"`
+	Retries int           `json:"retries"`
 }
 
 type PingMessage struct {
