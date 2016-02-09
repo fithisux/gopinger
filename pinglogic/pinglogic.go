@@ -132,6 +132,7 @@ func writeToDestinations(timedattempts *TimedAttempts, statuschannel chan *Multi
 	responses := new(Multipingresponse)
 
 	responses.Targets = make(map[string]*net.UDPAddr)
+	responses.Answers = make(map[string]int)
 	for _, x := range targets {
 		responses.Targets[x.String()] = x
 	}
