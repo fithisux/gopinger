@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"net"
-	"os"
 
 	"github.com/fithisux/gopinger/pinglogic"
 )
@@ -15,25 +14,17 @@ func main() {
 	strSourceAddr := flag.String("src", "", "source udp address")
 	flag.Parse()
 	if (strSourceAddr == nil) || (*strSourceAddr == "") {
-		fmt.Println("src must not be empty")
-		os.Exit(1)
+		panic("src must not be empty")
 	}
 
-	ServerAddr, err := net.ResolveUDPAddr("udp", *strSourceAddr)
-	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
-	}
+	if ServerAddr, err := net.ResolveUDPAddr("udp", *strSourceAddr); err == nil {
+		backchannel := make(chan *pinglogic.Backcall)
+		go pinglogic.Passive(ServerAddr, backchannel)
 
-	listentome(ServerAddr)
-}
-
-func listentome(ServerAddr *net.UDPAddr) {
-	pinglogic.Messagechannel = new(pinglogic.PingMessageChannel)
-	pinglogic.Messagechannel.Pingmessagechannel = make(chan *pinglogic.PingMessage)
-	go pinglogic.Passive(ServerAddr)
-
-	for x := range pinglogic.Messagechannel.Pingmessagechannel {
-		fmt.Println("received " + x.Msg + " from " + x.Backcall)
+		for backcall := range backchannel {
+			fmt.Println("received " + backcall.Responder_msg.Msg + " from " + backcall.Responder_url)
+		}
+	} else {
+		panic(err.Error())
 	}
 }

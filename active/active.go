@@ -47,9 +47,8 @@ func main() {
 
 	var err error
 	for i, x := range strTargets {
-		targets[i], err = net.ResolveUDPAddr("udp", x)
-		if err != nil {
-			fmt.Println("Error for destinationAddr: ", err)
+		if targets[i], err = net.ResolveUDPAddr("udp", x); err != nil {
+			panic(err)
 		}
 	}
 
@@ -58,16 +57,13 @@ func main() {
 		fmt.Println("Error for sourceAddr: ", err)
 	}
 
+	backchannel := make(chan *pinglogic.Backcall)
 	var wg sync.WaitGroup
-
 	wg.Add(1)
-	go func() { defer wg.Done(); pinglogic.Passive(sourceaddress) }()
-
-	elapsed, _ := pinglogic.Active(attempts, sourceaddress, targets)
-
+	go func() { defer wg.Done(); pinglogic.Passive(sourceaddress, backchannel) }()
+	elapsed, _ := pinglogic.Active(attempts, backchannel, sourceaddress, targets)
+	fmt.Println("After " + elapsed.String())
 	pinglogic.StopPassive()
 	wg.Wait()
-
-	fmt.Println("After " + elapsed.String())
-
+	close(backchannel)
 }
