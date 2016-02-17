@@ -16,8 +16,8 @@ import (
 func main() {
 	retries := flag.Int("retries", 5, "retries")
 	timeout := flag.Int("timeout", 100, "timeout in ms")
-	strDestinationAddr := flag.String("dst", "", "destination udp addresses")
-	strSourceAddr := flag.String("src", "", "source udp address")
+	strDestinationAddr := flag.String("dst", "", "destination udp urls")
+	strSourceAddr := flag.String("src", "", "source udp url to callback")
 
 	flag.Parse()
 
@@ -52,16 +52,17 @@ func main() {
 		}
 	}
 
-	sourceaddress, err := net.ResolveUDPAddr("udp", *strSourceAddr)
+	backaddress, err := net.ResolveUDPAddr("udp", *strSourceAddr)
 	if err != nil {
-		fmt.Println("Error for sourceAddr: ", err)
+		fmt.Println("Error for backadress: ", err)
 	}
 
 	backchannel := make(chan *pinglogic.Backcall)
+	pingconf := &pinglogic.PingConf{backaddress, backchannel, attempts}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go func() { defer wg.Done(); pinglogic.Passive(sourceaddress, backchannel) }()
-	elapsed, _ := pinglogic.Active(attempts, backchannel, sourceaddress, targets)
+	go func() { defer wg.Done(); pinglogic.Passive(backaddress, backchannel) }()
+	elapsed, _ := pinglogic.Active(pingconf, targets)
 	fmt.Println("After " + elapsed.String())
 	pinglogic.StopPassive()
 	wg.Wait()

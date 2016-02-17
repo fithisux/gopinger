@@ -11,6 +11,12 @@ import (
 	"time"
 )
 
+type PingConf struct {
+	Backaddress *net.UDPAddr
+	Backchannel <-chan *Backcall
+	Timingconf  *TimedAttempts
+}
+
 type TimedAttempts struct {
 	Timeout time.Duration `json:"timeout"`
 	Retries int           `json:"retries"`
@@ -22,8 +28,9 @@ type TargetedPing struct {
 }
 
 type PingMessage struct {
-	Msg       string    `json:"msg"`
-	Timestamp time.Time `json:"timestamp"`
+	Msg        string    `json:"msg"`
+	Callmeback string    `json:"callmeback"`
+	Timestamp  time.Time `json:"timestamp"`
 }
 
 type Backcall struct {
@@ -84,10 +91,10 @@ func Passive(ServerAddr *net.UDPAddr, backchannel chan<- *Backcall) {
 		}
 		if pingmessage.Msg == "PING" {
 			fmt.Println("read some ping")
-			pk2 := &PingMessage{"PONG", pingmessage.Timestamp}
+			pk2 := &PingMessage{"PONG", pingmessage.Callmeback, pingmessage.Timestamp}
 
 			if xxx, err := json.Marshal(pk2); err == nil {
-				if dstaddr, err := net.ResolveUDPAddr("udp", addr.String()); err == nil {
+				if dstaddr, err := net.ResolveUDPAddr("udp", pingmessage.Callmeback); err == nil {
 					if _, err := ServerConn.WriteTo(xxx, dstaddr); err != nil {
 						fmt.Println(err.Error())
 					}
@@ -105,19 +112,20 @@ func Passive(ServerAddr *net.UDPAddr, backchannel chan<- *Backcall) {
 	}
 }
 
-func Active(timedattempts *TimedAttempts, backchannel <-chan *Backcall, sourceaddress *net.UDPAddr, targets []*net.UDPAddr) (time.Duration, *Multipingresponse) {
+func Active(pingconf *PingConf, targets []*net.UDPAddr) (time.Duration, *Multipingresponse) {
 
 	statuschannel := make(chan *Multipingresponse)
 	startTime := time.Now()
-	go writeToDestinations(timedattempts, statuschannel, backchannel, sourceaddress, targets)
+	go writeToDestinations(pingconf, statuschannel, targets)
 	ok := <-statuschannel
 	fmt.Println("received " + strconv.Itoa(len(ok.Answers)) + " answers")
 	close(statuschannel)
 	return time.Since(startTime), ok
 }
 
-func writeToDestination(data []byte, sourceaddress, destinationaddress *net.UDPAddr) {
-	if Conn, err := net.DialUDP("udp", sourceaddress, destinationaddress); err != nil {
+func writeToDestination(data []byte, destinationaddress *net.UDPAddr) {
+	if Conn, err := net.DialUDP("udp", nil, destinationaddress); err != nil {
+		fmt.Println("ZOO1")
 		fmt.Println(err.Error())
 		return
 	} else {
@@ -128,7 +136,7 @@ func writeToDestination(data []byte, sourceaddress, destinationaddress *net.UDPA
 	}
 }
 
-func writeToDestinations(timedattempts *TimedAttempts, statuschannel chan<- *Multipingresponse, backchannel <-chan *Backcall, sourceaddress *net.UDPAddr, targets []*net.UDPAddr) {
+func writeToDestinations(pingconf *PingConf, statuschannel chan<- *Multipingresponse, targets []*net.UDPAddr) {
 	fmt.Println("Write to destinations")
 
 	responses := new(Multipingresponse)
@@ -144,14 +152,14 @@ func writeToDestinations(timedattempts *TimedAttempts, statuschannel chan<- *Mul
 	var ticker *time.Ticker
 
 	sendmessage := func() {
-		pingmessage := &PingMessage{"PING", time.Now()}
+		pingmessage := &PingMessage{"PING", pingconf.Backaddress.String(), time.Now()}
 		if byterepresentation, err := json.Marshal(pingmessage); err == nil {
 			for _, targetedpings := range responses.Targets {
-				go writeToDestination(byterepresentation, sourceaddress, targetedpings.ServerAddr)
+				fmt.Println("writing ping to " + targetedpings.ServerAddr.String())
+				go writeToDestination(byterepresentation, targetedpings.ServerAddr)
 			}
-			fmt.Println("writing ping from " + sourceaddress.String())
 			retries++
-			ticker = time.NewTicker(timedattempts.Timeout)
+			ticker = time.NewTicker(pingconf.Timingconf.Timeout)
 		} else {
 			panic(err.Error())
 		}
@@ -161,7 +169,7 @@ func writeToDestinations(timedattempts *TimedAttempts, statuschannel chan<- *Mul
 	sendmessage()
 	for {
 		select {
-		case b := <-backchannel:
+		case b := <-pingconf.Backchannel:
 			{
 				if b.Responder_msg.Msg == "PONG" {
 					if b.Responder_msg.Timestamp.After(responses.Targets[b.Responder_url].Startoftime) {
@@ -179,7 +187,7 @@ func writeToDestinations(timedattempts *TimedAttempts, statuschannel chan<- *Mul
 		case <-ticker.C:
 			{
 				fmt.Println(retries)
-				if retries == timedattempts.Retries {
+				if retries == pingconf.Timingconf.Retries {
 					statuschannel <- responses
 					return
 				} else {
